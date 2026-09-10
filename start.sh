@@ -45,4 +45,12 @@ export PGRST_DB_SCHEMA="${PGRST_DB_SCHEMA:-api}"
 export PGRST_DB_ANON_ROLE="${PGRST_DB_ANON_ROLE:-web_anon}"
 export PGRST_SERVER_PORT="${PORT:-7860}"
 
+# PGRST_JWT_ROLE_CLAIM_KEY must be a JSON path (".role", ".payload.role",
+# '."https://example.com/role"' or "[\"role\"]"). A bare value like "role"
+# is a parse error that crashes PostgREST at startup — normalize it.
+if [ -n "${PGRST_JWT_ROLE_CLAIM_KEY:-}" ] && \
+   [[ ! "$PGRST_JWT_ROLE_CLAIM_KEY" =~ ^(\.|\[|\") ]]; then
+    export PGRST_JWT_ROLE_CLAIM_KEY=".$PGRST_JWT_ROLE_CLAIM_KEY"
+fi
+
 exec postgrest
