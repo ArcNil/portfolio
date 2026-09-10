@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         postgresql-client \
         sudo \
         xz-utils \
+        python3 \
     && rm -rf /var/lib/apt/lists/*
 
 # --- PostgREST binary (static build from GitHub releases) ---
@@ -38,6 +39,13 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && rm /tmp/postgrest.tar.xz \
     && postgrest --version
 
+# --- Swagger UI static files (served at /docs by proxy.py) ---
+RUN curl -fsSL "https://registry.npmjs.org/swagger-ui-dist/-/swagger-ui-dist-5.32.15.tgz" \
+        -o /tmp/swagger-ui.tgz \
+    && mkdir -p /opt/swagger-ui \
+    && tar -xzf /tmp/swagger-ui.tgz -C /opt/swagger-ui --strip-components=1 \
+    && rm /tmp/swagger-ui.tgz
+
 # --- Non-root user (HF Spaces runs containers as a random UID) ---
 RUN useradd -m -u 10001 appuser \
     && mkdir -p /var/lib/postgresql/data /var/run/postgresql \
@@ -49,7 +57,8 @@ WORKDIR /home/appuser
 # --- Sample schema: a tiny "todos" API to demo PostgREST ---
 COPY --chown=appuser:appuser init.sql /docker-entrypoint-init.d/init.sql
 COPY --chown=appuser:appuser start.sh /usr/local/bin/start.sh
-RUN chmod +x /usr/local/bin/start.sh
+COPY --chown=appuser:appuser proxy.py /usr/local/bin/proxy.py
+RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/proxy.py
 
 EXPOSE 7860
 

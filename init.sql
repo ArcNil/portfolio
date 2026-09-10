@@ -1,4 +1,6 @@
 -- Schema + roles for PostgREST, executed once at container startup.
+-- Model: chat history (conversations -> messages).
+-- (Mirrors migrations/0001_chat_history.sql)
 
 -- Role PostgREST connects as (anonymous / public access)
 CREATE ROLE web_anon LOGIN NOINHERIT;
@@ -10,32 +12,62 @@ GRANT web_anon TO authenticator;
 
 CREATE SCHEMA api;
 GRANT USAGE ON SCHEMA api TO web_anon;
+-- authenticator owns the tables, so foreign-key checks (which run as the
+-- table owner) need USAGE on the schema too. NOINHERIT means it does NOT
+-- inherit web_anon's grants.
+GRANT USAGE ON SCHEMA api TO authenticator;
 
-CREATE TABLE api.todos (
+-- One conversation (a chat thread)
+CREATE TABLE api.chats (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    done        boolean NOT NULL DEFAULT false,
-    task        text    NOT NULL,
-    due         timestamptz,
+    title       text    NOT NULL,
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 
+-- Messages belonging to a conversation
+CREATE TABLE api.messages (
+    id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    chat_id     bigint  NOT NULL REFERENCES api.chats (id) ON DELETE CASCADE,
+    role        text    NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+    content     text    NOT NULL,
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX messages_chat_id_idx ON api.messages (chat_id);
+
 -- Change ownership BEFORE granting: ALTER TABLE ... OWNER TO drops
 -- privileges granted by the previous owner.
-ALTER TABLE api.todos OWNER TO authenticator;
-GRANT SELECT, INSERT, UPDATE, DELETE ON api.todos TO web_anon;
-GRANT USAGE, SELECT ON SEQUENCE api.todos_id_seq TO web_anon;
+ALTER TABLE api.chats    OWNER TO authenticator;
+ALTER TABLE api.messages OWNER TO authenticator;
 
-INSERT INTO api.todos (task, due) VALUES
-    ('Try GET /todos', now() + interval '1 day'),
-    ('Try POST /todos', now() + interval '2 days'),
-    ('Try PATCH /todos?id=eq.1', now() + interval '3 days');
+GRANT SELECT, INSERT, UPDATE, DELETE ON api.chats    TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON api.messages TO web_anon;
+GRANT USAGE, SELECT ON SEQUENCE api.chats_id_seq    TO web_anon;
+GRANT USAGE, SELECT ON SEQUENCE api.messages_id_seq TO web_anon;
 
--- Expose row counts in Content-Range headers
-CREATE OR REPLACE FUNCTION api.todos_count()
+INSERT INTO api.chats (title) VALUES
+    ('Getting started'),
+    ('PostgREST questions');
+
+INSERT INTO api.messages (chat_id, role, content) VALUES
+    (1, 'user',      'How do I list all chats?'),
+    (1, 'assistant', 'GET /chats — or GET /chats?select=*,messages(*) to embed messages.'),
+    (2, 'user',      'How do I add a message to chat 1?'),
+    (2, 'assistant', 'POST /messages with {"chat_id": 1, "role": "user", "content": "..."}');
+
+-- Row counts for Content-Range headers
+CREATE OR REPLACE FUNCTION api.chats_count()
 RETURNS bigint
 LANGUAGE sql
 AS $$
-    SELECT count(*) FROM api.todos;
+    SELECT count(*) FROM api.chats;
+$$;
+
+CREATE OR REPLACE FUNCTION api.messages_count()
+RETURNS bigint
+LANGUAGE sql
+AS $$
+    SELECT count(*) FROM api.messages;
 $$;
 
 -- OpenAPI description endpoint
@@ -43,5 +75,5 @@ CREATE OR REPLACE FUNCTION api.openapi_description()
 RETURNS text
 LANGUAGE sql
 AS $$
-    SELECT 'A demo PostgREST API running on Hugging Face Spaces';
+    SELECT 'A demo PostgREST chat-history API running on Hugging Face Spaces';
 $$;

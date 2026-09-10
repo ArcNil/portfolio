@@ -43,7 +43,7 @@ fi
 export PGRST_DB_URI="postgresql://authenticator:${AUTHENTICATOR_PASSWORD:-secret}@/postgres?host=$SOCKET_DIR&port=5432"
 export PGRST_DB_SCHEMA="${PGRST_DB_SCHEMA:-api}"
 export PGRST_DB_ANON_ROLE="${PGRST_DB_ANON_ROLE:-web_anon}"
-export PGRST_SERVER_PORT="${PORT:-7860}"
+export PGRST_SERVER_PORT="${PGRST_PORT:-3000}"
 
 # PGRST_JWT_ROLE_CLAIM_KEY must be a JSON path (".role", ".payload.role",
 # '."https://example.com/role"' or "[\"role\"]"). A bare value like "role"
@@ -53,4 +53,7 @@ if [ -n "${PGRST_JWT_ROLE_CLAIM_KEY:-}" ] && \
     export PGRST_JWT_ROLE_CLAIM_KEY=".$PGRST_JWT_ROLE_CLAIM_KEY"
 fi
 
-exec postgrest
+# PostgREST listens on the internal port; the proxy serves it (plus
+# Swagger UI at /docs) on the public $PORT.
+postgrest &
+exec python3 /usr/local/bin/proxy.py
