@@ -10,22 +10,20 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PGRST_DB_ANON_ROLE=web_anon \
     PGRST_SERVER_HOST=0.0.0.0
 
-# Debian's postgresql package installs binaries outside the default PATH
-ENV PATH="/usr/lib/postgresql/15/bin:${PATH}"
-
 # --- System dependencies: PostgreSQL server + tools ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
-        xz-utils \
         libpq5 \
         postgresql \
         postgresql-contrib \
         postgresql-client \
         sudo \
+        xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # --- PostgREST binary (static build from GitHub releases) ---
+# v16+ assets are named linux-static-x86-64 / linux-static-aarch64
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
         amd64) PGRST_ARCH=x86-64 ;; \

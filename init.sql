@@ -3,8 +3,9 @@
 -- Role PostgREST connects as (anonymous / public access)
 CREATE ROLE web_anon LOGIN NOINHERIT;
 
--- Role used to apply schema changes
-CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'secret';
+-- Role used to apply schema changes. Password comes from start.sh
+-- via psql variable `auth_pw` (sourced from AUTHENTICATOR_PASSWORD).
+CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD :'auth_pw';
 GRANT web_anon TO authenticator;
 
 CREATE SCHEMA api;
