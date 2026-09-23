@@ -1,5 +1,5 @@
 ---
-title: Test
+title: All DB
 emoji: 🔥
 colorFrom: yellow
 colorTo: indigo

@@ -1,65 +1,37 @@
-# PostgREST + PostgreSQL in a single container (Hugging Face Space)
-# Serves a fully RESTful API from a Postgres database on port 7860.
+FROM postgres:16
 
-FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    PGRST_VERSION=16.2 \
-    PORT=7860 \
-    PGRST_DB_SCHEMAS=api \
-    PGRST_DB_ANON_ROLE=web_anon \
-    PGRST_SERVER_HOST=0.0.0.0
-
-# --- System dependencies: PostgreSQL server + tools ---
+# python for the FastAPI app, ssh client for the tunnel, supervisor to run
+# postgres + the tunnel loop + the api as one PID-1-managed process tree.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-        libpq5 \
-        postgresql \
-        postgresql-contrib \
-        postgresql-client \
-        sudo \
-        xz-utils \
-        python3 \
+        python3 python3-pip \
+        openssh-client \
+        supervisor \
     && rm -rf /var/lib/apt/lists/*
 
-# --- PostgREST binary (static build from GitHub releases) ---
-# v16+ assets are named linux-static-x86-64 / linux-static-aarch64
-RUN ARCH="$(dpkg --print-architecture)" \
-    && case "$ARCH" in \
-        amd64) PGRST_ARCH=x86-64 ;; \
-        arm64) PGRST_ARCH=aarch64 ;; \
-        *) echo "unsupported arch: $ARCH" && exit 1 ;; \
-    esac \
-    && curl -fsSL \
-        "https://github.com/PostgREST/postgrest/releases/download/v${PGRST_VERSION}/postgrest-v${PGRST_VERSION}-linux-static-${PGRST_ARCH}.tar.xz" \
-        -o /tmp/postgrest.tar.xz \
-    && tar -xJf /tmp/postgrest.tar.xz -C /usr/local/bin \
-    && chmod +x /usr/local/bin/postgrest \
-    && rm /tmp/postgrest.tar.xz \
-    && postgrest --version
+# Key so pinggy never blocks on an interactive password prompt (there's no
+# TTY in a container). Accepted as an unauthenticated client key by pinggy's
+# free tier -- it's just there to skip the "press enter" prompt.
+RUN mkdir -p /root/.ssh \
+    && ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q
 
-# --- Swagger UI static files (served at /docs by proxy.py) ---
-RUN curl -fsSL "https://registry.npmjs.org/swagger-ui-dist/-/swagger-ui-dist-5.32.15.tgz" \
-        -o /tmp/swagger-ui.tgz \
-    && mkdir -p /opt/swagger-ui \
-    && tar -xzf /tmp/swagger-ui.tgz -C /opt/swagger-ui --strip-components=1 \
-    && rm /tmp/swagger-ui.tgz
+WORKDIR /app
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed -r requirements.txt
+COPY app/ ./app/
 
-# --- Non-root user (HF Spaces runs containers as a random UID) ---
-RUN useradd -m -u 10001 appuser \
-    && mkdir -p /var/lib/postgresql/data /var/run/postgresql \
-    && chown -R appuser:appuser /var/lib/postgresql /var/run/postgresql /usr/local/bin/postgrest
+COPY tunnel.sh /usr/local/bin/tunnel.sh
+RUN chmod +x /usr/local/bin/tunnel.sh
 
-USER appuser
-WORKDIR /home/appuser
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# --- Sample schema: a tiny "todos" API to demo PostgREST ---
-COPY --chown=appuser:appuser init.sql /docker-entrypoint-init.d/init.sql
-COPY --chown=appuser:appuser start.sh /usr/local/bin/start.sh
-COPY --chown=appuser:appuser proxy.py /usr/local/bin/proxy.py
-RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/proxy.py
+# Override these at `docker run -e ...` (don't ship real creds in the image).
+ENV POSTGRES_PASSWORD=changeme
+ENV POSTGRES_USER=postgres
+ENV POSTGRES_DB=postgres
 
 EXPOSE 7860
 
-CMD ["start.sh"]
+ENTRYPOINT ["/usr/bin/supervisord"]
+CMD ["-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
