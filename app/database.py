@@ -21,7 +21,7 @@ class DatabaseUrlUnavailable(RuntimeError):
     pass
 
 
-def _extract_database_url(payload: str) -> str:
+def _extract_database_url(payload: str, settings: Settings) -> str:
     """Pull the database URL out of a plain-text or JSON response body."""
     value = payload.strip()
     if not value:
@@ -49,20 +49,43 @@ def _extract_database_url(payload: str) -> str:
     if "://" not in database_url:
         raise ValueError("database URL is not a valid connection URL")
 
+    database_url = _build_url_from_tunnel(database_url, settings)
     return _ensure_psycopg3_scheme(database_url)
 
 
 def _ensure_psycopg3_scheme(database_url: str) -> str:
-    """Force the psycopg 3 driver scheme on plain postgresql:// URLs.
+    """Normalize tunnel/provider URLs into a SQLAlchemy psycopg 3 URL.
 
     The app installs psycopg[binary] (v3), but SQLAlchemy defaults to the
     psycopg2 driver for bare `postgresql://` URLs. Third-party providers
-    (Supabase, Neon, etc.) hand out plain `postgresql://` URLs, so rewrite
-    them to `postgresql+psycopg://` before handing them to SQLAlchemy.
+    (Supabase, Neon, etc.) hand out plain `postgresql://` URLs, and tunnel
+    endpoints may return `tcp://host:port` (no credentials/database) —
+    rewrite both into `postgresql+psycopg://` before handing them to
+    SQLAlchemy.
     """
     if database_url.startswith("postgresql://"):
         return database_url.replace("postgresql://", "postgresql+psycopg://", 1)
     return database_url
+
+
+def _build_url_from_tunnel(
+    tunnel_url: str, settings: Settings
+) -> str:
+    """Expand a bare tcp://host:port tunnel URL into a full Postgres URL.
+
+    Tunnel endpoints (e.g. pinggy) expose the database as tcp://host:port
+    with no credentials or database name; those come from settings
+    (DATABASE_USER / DATABASE_PASSWORD / DATABASE_NAME).
+    """
+    if not tunnel_url.startswith("tcp://"):
+        return tunnel_url
+
+    from urllib.parse import quote
+
+    rest = tunnel_url.removeprefix("tcp://")  # host:port
+    user = quote(settings.database_user, safe="")
+    password = quote(settings.database_password, safe="")
+    return f"postgresql+psycopg://{user}:{password}@{rest}/{settings.database_name}"
 
 
 def _fetch_database_url_from_endpoint(settings: Settings) -> str:
@@ -84,7 +107,7 @@ def _fetch_database_url_from_endpoint(settings: Settings) -> str:
         ) from exc
 
     try:
-        return _extract_database_url(payload)
+        return _extract_database_url(payload, settings)
     except ValueError as exc:
         raise DatabaseUrlUnavailable(
             f"Invalid database URL response from {settings.database_url_endpoint}"

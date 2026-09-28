@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     # unreachable or returns a bad response. The prod DB URL changes over
     # time, so the endpoint is always the primary source.
     database_url: str | None = None
+    # Credentials used when the discovery endpoint returns a bare tunnel URL
+    # (tcp://host:port) that carries no user/password/database.
+    database_user: str = "postgres"
+    database_password: str = "postgres"
+    database_name: str = "postgres"
     database_url_endpoint: str = "http://localhost:8000/db-url"
     database_url_endpoint_key: str | None = "dev-key"
     worker_api_key: str | None = None
