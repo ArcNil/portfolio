@@ -1,5 +1,5 @@
 ---
-title: Test
+title: Portfolio Workers
 emoji: 🔥
 colorFrom: yellow
 colorTo: indigo
@@ -7,4 +7,4 @@ sdk: docker
 pinned: false
 ---
 
-Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
+Portfolio Workers is the backend worker service for a portfolio.
